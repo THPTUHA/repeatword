@@ -50,20 +50,20 @@ func (q *Queries) GetExamples(ctx context.Context, meanIds []sql.NullInt32) ([]E
 }
 
 const getMeans = `-- name: GetMeans :many
-SELECT id, vob_id, meaning FROM means m
-WHERE m.vob_id IN (/*SLICE:vob_ids*/?)
+SELECT id, part_id, meaning, level FROM means m
+WHERE m.part_id IN (/*SLICE:part_ids*/?)
 `
 
-func (q *Queries) GetMeans(ctx context.Context, vobIds []sql.NullInt32) ([]Mean, error) {
+func (q *Queries) GetMeans(ctx context.Context, partIds []sql.NullInt32) ([]Mean, error) {
 	query := getMeans
 	var queryParams []interface{}
-	if len(vobIds) > 0 {
-		for _, v := range vobIds {
+	if len(partIds) > 0 {
+		for _, v := range partIds {
 			queryParams = append(queryParams, v)
 		}
-		query = strings.Replace(query, "/*SLICE:vob_ids*/?", strings.Repeat(",?", len(vobIds))[1:], 1)
+		query = strings.Replace(query, "/*SLICE:part_ids*/?", strings.Repeat(",?", len(partIds))[1:], 1)
 	} else {
-		query = strings.Replace(query, "/*SLICE:vob_ids*/?", "NULL", 1)
+		query = strings.Replace(query, "/*SLICE:part_ids*/?", "NULL", 1)
 	}
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
@@ -73,7 +73,12 @@ func (q *Queries) GetMeans(ctx context.Context, vobIds []sql.NullInt32) ([]Mean,
 	var items []Mean
 	for rows.Next() {
 		var i Mean
-		if err := rows.Scan(&i.ID, &i.VobID, &i.Meaning); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.PartID,
+			&i.Meaning,
+			&i.Level,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -92,11 +97,11 @@ SELECT v.id, v.word FROM
 collections c, collection_words cw, vobs v
 WHERE c.id = cw.collection_id 
 AND cw.vob_id = v.id
-AND c.name = ? ORDER BY RAND()
+AND c.id = ? ORDER BY RAND()
 `
 
-func (q *Queries) GetVobsCollection(ctx context.Context, name sql.NullString) ([]Vob, error) {
-	rows, err := q.db.QueryContext(ctx, getVobsCollection, name)
+func (q *Queries) GetVobsCollection(ctx context.Context, id int32) ([]Vob, error) {
+	rows, err := q.db.QueryContext(ctx, getVobsCollection, id)
 	if err != nil {
 		return nil, err
 	}
@@ -116,4 +121,34 @@ func (q *Queries) GetVobsCollection(ctx context.Context, name sql.NullString) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const getVobsRandom = `-- name: GetVobsRandom :one
+SELECT GetVobsRandom(?, ?)
+`
+
+type GetVobsRandomParams struct {
+	Getvobsrandom   interface{}
+	Getvobsrandom_2 interface{}
+}
+
+func (q *Queries) GetVobsRandom(ctx context.Context, arg GetVobsRandomParams) (interface{}, error) {
+	row := q.db.QueryRowContext(ctx, getVobsRandom, arg.Getvobsrandom, arg.Getvobsrandom_2)
+	var getvobsrandom interface{}
+	err := row.Scan(&getvobsrandom)
+	return getvobsrandom, err
+}
+
+const setWord = `-- name: SetWord :exec
+CALL SetWord(?,?)
+`
+
+type SetWordParams struct {
+	Setword   interface{}
+	Setword_2 interface{}
+}
+
+func (q *Queries) SetWord(ctx context.Context, arg SetWordParams) error {
+	_, err := q.db.ExecContext(ctx, setWord, arg.Setword, arg.Setword_2)
+	return err
 }

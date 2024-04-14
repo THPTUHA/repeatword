@@ -27,11 +27,28 @@ type Example struct {
 
 type Mean struct {
 	ID      int32
-	VobID   sql.NullInt32
+	PartID  sql.NullInt32
 	Meaning sql.NullString
+	Level   sql.NullString
+}
+
+type Pronounce struct {
+	ID        int32
+	AudioSrc  sql.NullString
+	LocalFile sql.NullString
+	Region    sql.NullString
+	Pro       sql.NullString
+	PartID    sql.NullInt32
 }
 
 type Vob struct {
 	ID   int32
 	Word sql.NullString
+}
+
+type VobPart struct {
+	ID    int32
+	VobID sql.NullInt32
+	Type  sql.NullString
+	Title sql.NullString
 }

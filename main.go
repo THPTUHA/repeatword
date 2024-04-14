@@ -1,8 +1,43 @@
 package main
 
-import "github.com/THPTUHA/repeatword/game"
+import (
+	"flag"
+	"fmt"
+	"log"
+
+	"github.com/THPTUHA/repeatword/crawl"
+	"github.com/THPTUHA/repeatword/game"
+)
 
 func main() {
-	game := game.Init()
-	game.Play()
+	cid := flag.Uint64("cid", 1, "collection id")
+	limit := flag.Uint64("lm", 10, "limit question per")
+	action := flag.String("action", "", "action to perform: play or crawl")
+	flag.Parse()
+
+	if *action == "" {
+		fmt.Println("action is required")
+		return
+	}
+
+	switch *action {
+	case "play":
+		game := game.Init(&game.Config{
+			CollectionID: *cid,
+			Limit:        *limit,
+		})
+		game.Play()
+	case "crawl":
+		if flag.NArg() < 1 {
+			fmt.Println("need word")
+			return
+		}
+		crawler := crawl.NewCamCrawler()
+		err := crawler.Crawl(flag.Arg(0))
+		if err != nil {
+			log.Fatalln(err)
+		}
+	default:
+		fmt.Println("unknown action")
+	}
 }

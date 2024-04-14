@@ -2,12 +2,12 @@ USE repeatword;
 
 -- DROP SCHEMA repeatword;
 -- CREATE SCHEMA repeatword;
--- CREATE TABLE vobs (
+-- CREATE TABLE IF NOT EXISTS vobs (
 --     id INT AUTO_INCREMENT PRIMARY KEY,
 --     word VARCHAR(255)
 -- );
 
--- CREATE TABLE means (
+-- CREATE TABLE IF NOT EXISTS means (
 --     id INT AUTO_INCREMENT PRIMARY KEY,
 --     vob_id INT,
 --     meaning VARCHAR(255),
@@ -15,19 +15,19 @@ USE repeatword;
 --     FOREIGN KEY (vob_id) REFERENCES vobs(id) ON DELETE CASCADE
 -- );
 
--- CREATE TABLE examples (
+-- CREATE TABLE IF NOT EXISTS examples (
 --     id INT AUTO_INCREMENT PRIMARY KEY,
 --     mean_id INT,
 --     example TEXT,
 --     FOREIGN KEY (mean_id) REFERENCES means(id) ON DELETE CASCADE
 -- );
 
--- CREATE TABLE collections (
+-- CREATE TABLE IF NOT EXISTS collections (
 --     id INT AUTO_INCREMENT PRIMARY KEY,
 --     name VARCHAR(255)
 -- );
 
--- CREATE TABLE collection_words (
+-- CREATE TABLE IF NOT EXISTS collection_words (
 --     id INT AUTO_INCREMENT PRIMARY KEY,
 --     vob_id INT,
 --     collection_id INT,
@@ -49,6 +49,6 @@ USE repeatword;
 -- END
 -- SELECT v.word, m.meaning, e.example FROM vobs v, means m, examples e
 -- WHERE v.id = m.vob_id AND m.id = e.mean_id;
-SELECT * FROM means;
-SELECT * FROM examples;
+SELECT * FROM vobs;
+SELECT * FROM collections;
 -- DELETE FROM vobs;

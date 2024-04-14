@@ -2,13 +2,15 @@ package game
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 
 	"github.com/THPTUHA/repeatword/audio"
 	"github.com/THPTUHA/repeatword/db"
+	"github.com/THPTUHA/repeatword/vocab"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
@@ -19,20 +21,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type example struct {
-	db.Example
-}
-
-type mean struct {
-	db.Mean
-	examples []example
-}
-
-type vob struct {
-	db.Vob
-	correct bool
-	means   []mean
-}
+var (
+	correctStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#008000"))
+	wrongStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+)
 
 const (
 	START_STATUS   = 0
@@ -41,7 +33,7 @@ const (
 )
 
 type Game struct {
-	vobs       []*vob
+	vobs       []*vocab.Vocabulary
 	status     int
 	currentIdx int
 
@@ -60,7 +52,30 @@ type keymap struct {
 	status key.Binding
 }
 
-func Init() *Game {
+type Config struct {
+	CollectionID uint64
+	Limit        uint64
+}
+
+var currentConfig *Config = nil
+
+func Init(config *Config) *Game {
+	if config == nil {
+		config = &Config{
+			CollectionID: 1,
+			Limit:        10,
+		}
+	}
+
+	if config.CollectionID == 0 {
+		config.CollectionID = 1
+	}
+
+	if config.Limit == 0 {
+		config.Limit = 10
+	}
+	currentConfig = config
+
 	g := initialModel()
 	g.stopCh = make(chan bool)
 	d, err := db.ConnectMysql()
@@ -69,59 +84,27 @@ func Init() *Game {
 	}
 	queries := db.New(d)
 	ctx := context.Background()
-	vobResults, err := queries.GetVobsCollection(ctx, sql.NullString{String: "s1", Valid: true})
+
+	vobs := make([]*vocab.Vocabulary, 0)
+	result, err := queries.GetVobsRandom(ctx, db.GetVobsRandomParams{
+		Getvobsrandom:   config.CollectionID,
+		Getvobsrandom_2: config.Limit,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	vobs := make([]*vob, 0)
-	vobIDs := make([]sql.NullInt32, 0)
-	meanIDs := make([]sql.NullInt32, 0)
-
-	for _, v := range vobResults {
-		vobs = append(vobs, &vob{
-			Vob: v,
-		})
-		vobIDs = append(vobIDs, sql.NullInt32{Int32: v.ID, Valid: true})
-	}
-
-	meanResults, err := queries.GetMeans(ctx, vobIDs)
+	err = json.Unmarshal(result.([]byte), &vobs)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	for _, v := range vobs {
-		for _, g := range meanResults {
-			if v.ID == g.VobID.Int32 {
-				v.means = append(v.means, mean{Mean: g})
-			}
-		}
-	}
-
-	for _, g := range meanResults {
-		meanIDs = append(meanIDs, sql.NullInt32{Int32: g.ID, Valid: true})
-	}
-
-	exampleResults, err := queries.GetExamples(ctx, meanIDs)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, v := range vobs {
-		for _, g := range v.means {
-			for _, e := range exampleResults {
-				if g.ID == e.MeanID.Int32 {
-					g.examples = append(g.examples, example{Example: e})
-				}
-			}
-		}
-	}
-
 	g.vobs = vobs
+	// for _, v := range vobs {
+	// 	fmt.Println(v.String())
+	// }
 	return g
 }
 
-const timeInterval = 3 * time.Second
+const timeInterval = 5 * time.Second
 
 func (g *Game) Init() tea.Cmd {
 	go g.playAudio()
@@ -159,7 +142,7 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				g.viewport.SetContent("Type a answer and press Enter to check.")
 				return g, g.timer.Init()
 			} else if g.status == FINISH_STATUS {
-				g = Init()
+				g = Init(currentConfig)
 				g.status = PLAYING_STATUS
 				go g.playAudio()
 				return g, g.timer.Init()
@@ -172,14 +155,14 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				vob := g.vobs[g.currentIdx]
 				var checkAnswer string
 				if vob.Word.String == g.input.Value() {
-					vob.correct = true
-					checkAnswer = lipgloss.NewStyle().Foreground(lipgloss.Color("#008000")).Render(g.input.Value())
+					vob.Correct = true
+					checkAnswer = correctStyle.Render(g.input.Value())
 				} else {
-					checkAnswer = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Render(g.input.Value())
+					checkAnswer = wrongStyle.Render(g.input.Value())
 				}
 				g.viewport.SetContent(checkAnswer)
 
-				if vob.correct {
+				if vob.Correct {
 					return g.nextQuiz(tea.Batch(tiCmd, vpCmd))
 				}
 
@@ -258,13 +241,19 @@ func (g *Game) nextQuiz(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 
 		rows := []table.Row{}
 		for _, vob := range g.vobs {
-			rows = append(rows, table.Row{vob.Word.String, fmt.Sprint(vob.correct)})
+			status := correctStyle.Render(fmt.Sprint(vob.Correct))
+			wordStatus := correctStyle.Render(fmt.Sprint(vob.Word.String))
+			if !vob.Correct {
+				status = wrongStyle.Render(fmt.Sprint(vob.Correct))
+				wordStatus = wrongStyle.Render(fmt.Sprint(vob.Word.String))
+			}
+			rows = append(rows, table.Row{wordStatus, status})
 		}
 		g.result = table.New(
 			table.WithColumns(columns),
 			table.WithRows(rows),
-			table.WithFocused(true),
-			table.WithHeight(7))
+			table.WithFocused(false),
+			table.WithHeight(len(rows)+1))
 		return g, cmd
 	}
 
@@ -283,10 +272,17 @@ func (g *Game) playAudio() {
 		default:
 			if g.status == PLAYING_STATUS {
 				vob := g.vobs[g.currentIdx]
-				audio.PlayAudio(fmt.Sprintf("%s_001.mp3", vob.Word.String))
+				idx := randomInt(len(vob.Parts[0].Pronounces) - 1)
+				audio.PlayAudio(vob.Parts[0].Pronounces[idx].LocalFile.String)
 			}
 		}
 	}
+}
+
+func randomInt(n int) int {
+	rand.Seed(time.Now().UnixNano())
+
+	return rand.Intn(n) + 1
 }
 
 func (g *Game) Play() {
