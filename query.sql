@@ -18,3 +18,6 @@ CALL SetWord(?,?);
 
 -- name: GetVobsRandom :one
 SELECT GetVobsRandom(?, ?);
+
+-- name: GetWord :one
+SELECT * FROM vobs WHERE word = ?;

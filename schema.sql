@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS vobs (
     word VARCHAR(255)
 );
 
+
+ALTER TABLE vobs ADD CONSTRAINT unique_word UNIQUE (word);
+
 CREATE TABLE IF NOT EXISTS vob_parts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     vob_id INT,

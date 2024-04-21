@@ -7,6 +7,8 @@ import (
 
 	"github.com/THPTUHA/repeatword/crawl"
 	"github.com/THPTUHA/repeatword/game"
+	"github.com/THPTUHA/repeatword/logger"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -25,6 +27,7 @@ func main() {
 		game := game.Init(&game.Config{
 			CollectionID: *cid,
 			Limit:        *limit,
+			Logger:       logger.InitLogger(logrus.DebugLevel.String()),
 		})
 		game.Play()
 	case "crawl":

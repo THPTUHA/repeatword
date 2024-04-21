@@ -27,6 +27,20 @@ func NewCamCrawler() *CamCrawler {
 }
 
 func (cc *CamCrawler) Crawl(word string) error {
+	d, err := db.ConnectMysql()
+	if err != nil {
+		log.Fatal(err)
+	}
+	queries := db.New(d)
+	ctx := context.Background()
+
+	w, err := queries.GetWord(ctx, sql.NullString{String: word, Valid: true})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if w.ID != 0 {
+		log.Fatalf("word %s exist", word)
+	}
 	doc, err := cc.fetchData(fmt.Sprintf("%s/%s", cc.BaseUrl, word))
 	if err != nil {
 		return err
@@ -96,14 +110,6 @@ func (cc *CamCrawler) Crawl(word string) error {
 		log.Fatal(err)
 	}
 	fmt.Println(string(jvb))
-
-	d, err := db.ConnectMysql()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	queries := db.New(d)
-	ctx := context.Background()
 
 	err = queries.SetWord(ctx, db.SetWordParams{1, jvb})
 

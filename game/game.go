@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"time"
 
 	"github.com/THPTUHA/repeatword/audio"
 	"github.com/THPTUHA/repeatword/db"
+	"github.com/THPTUHA/repeatword/logger"
 	"github.com/THPTUHA/repeatword/vocab"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -30,6 +31,12 @@ const (
 	START_STATUS   = 0
 	PLAYING_STATUS = 1
 	FINISH_STATUS  = 2
+)
+
+const (
+	PLAY = iota
+	PLAY_AGAIN
+	PLAY_AGAIN_WORD_WRONG
 )
 
 type Game struct {
@@ -44,17 +51,24 @@ type Game struct {
 	keymap   keymap
 	help     help.Model
 
-	stopCh chan bool
+	stopCh chan int
 	err    error
+
+	logger *logrus.Entry
 }
 
 type keymap struct {
-	status key.Binding
+	status        key.Binding
+	playAgain     key.Binding
+	playWordWrong key.Binding
 }
 
 type Config struct {
 	CollectionID uint64
 	Limit        uint64
+	PlayMode     uint32
+	Logger       *logrus.Entry
+	game         *Game
 }
 
 var currentConfig *Config = nil
@@ -64,6 +78,7 @@ func Init(config *Config) *Game {
 		config = &Config{
 			CollectionID: 1,
 			Limit:        10,
+			Logger:       logger.InitLogger(logrus.DebugLevel.String()),
 		}
 	}
 
@@ -77,27 +92,39 @@ func Init(config *Config) *Game {
 	currentConfig = config
 
 	g := initialModel()
-	g.stopCh = make(chan bool)
+	g.stopCh = make(chan int)
 	d, err := db.ConnectMysql()
 	if err != nil {
-		log.Fatal(err)
+		g.logger.Fatal(err)
 	}
 	queries := db.New(d)
 	ctx := context.Background()
 
 	vobs := make([]*vocab.Vocabulary, 0)
-	result, err := queries.GetVobsRandom(ctx, db.GetVobsRandomParams{
-		Getvobsrandom:   config.CollectionID,
-		Getvobsrandom_2: config.Limit,
-	})
-	if err != nil {
-		log.Fatal(err)
+	switch config.PlayMode {
+	case PLAY_AGAIN_WORD_WRONG:
+		for _, v := range config.game.vobs {
+			if !v.Correct {
+				vobs = append(vobs, v)
+			}
+		}
+	default:
+
+		result, err := queries.GetVobsRandom(ctx, db.GetVobsRandomParams{
+			Getvobsrandom:   config.CollectionID,
+			Getvobsrandom_2: config.Limit,
+		})
+		if err != nil {
+			g.logger.Fatal(err)
+		}
+		err = json.Unmarshal(result.([]byte), &vobs)
+		if err != nil {
+			g.logger.Fatal(err)
+		}
 	}
-	err = json.Unmarshal(result.([]byte), &vobs)
-	if err != nil {
-		log.Fatal(err)
-	}
+
 	g.vobs = vobs
+
 	// for _, v := range vobs {
 	// 	fmt.Println(v.String())
 	// }
@@ -142,10 +169,24 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				g.viewport.SetContent("Type a answer and press Enter to check.")
 				return g, g.timer.Init()
 			} else if g.status == FINISH_STATUS {
+				currentConfig.PlayMode = PLAY_AGAIN
 				g = Init(currentConfig)
 				g.status = PLAYING_STATUS
 				go g.playAudio()
 				return g, g.timer.Init()
+			}
+		case tea.KeyCtrlW:
+			if g.status == FINISH_STATUS {
+				for _, v := range g.vobs {
+					if !v.Correct {
+						currentConfig.PlayMode = PLAY_AGAIN_WORD_WRONG
+						currentConfig.game = g
+						g = Init(currentConfig)
+						g.status = PLAYING_STATUS
+						go g.playAudio()
+						return g, g.timer.Init()
+					}
+				}
 			}
 		case tea.KeyCtrlC, tea.KeyEsc:
 			fmt.Println(g.input.Value())
@@ -181,9 +222,14 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (g *Game) View() string {
 	if g.status == FINISH_STATUS {
-		return fmt.Sprintf("%s\n%s", g.result.View(), g.help.ShortHelpView([]key.Binding{
-			g.keymap.status,
-		}))
+		keys := make([]key.Binding, 0)
+		keys = append(keys, g.keymap.playAgain)
+		for _, v := range g.vobs {
+			if !v.Correct {
+				keys = append(keys, g.keymap.playWordWrong)
+			}
+		}
+		return fmt.Sprintf("%s\n%s", g.result.View(), g.help.ShortHelpView(keys))
 	}
 
 	if g.status == PLAYING_STATUS {
@@ -214,7 +260,15 @@ func initialModel() *Game {
 		keymap: keymap{
 			status: key.NewBinding(
 				key.WithKeys("ctrl+s"),
-				key.WithHelp("ctrl+s", "status"),
+				key.WithHelp("ctrl+s", "to start"),
+			),
+			playAgain: key.NewBinding(
+				key.WithKeys("ctrl+s"),
+				key.WithHelp("ctrl+s", "play again"),
+			),
+			playWordWrong: key.NewBinding(
+				key.WithKeys("ctrl+w"),
+				key.WithHelp("ctrl+w", "play again word wrong"),
 			),
 		},
 		help:     help.New(),
@@ -267,13 +321,17 @@ func (g *Game) nextQuiz(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 func (g *Game) playAudio() {
 	for {
 		select {
-		case <-g.stopCh:
-			return
+		case status := <-g.stopCh:
+			if status == FINISH_STATUS {
+				return
+			}
 		default:
 			if g.status == PLAYING_STATUS {
 				vob := g.vobs[g.currentIdx]
 				idx := randomInt(len(vob.Parts[0].Pronounces) - 1)
 				audio.PlayAudio(vob.Parts[0].Pronounces[idx].LocalFile.String)
+			} else if g.status == FINISH_STATUS {
+				return
 			}
 		}
 	}
@@ -289,7 +347,6 @@ func (g *Game) Play() {
 	p := tea.NewProgram(g)
 
 	if _, err := p.Run(); err != nil {
-		log.Fatal(err)
+		g.logger.Fatal(err)
 	}
-
 }

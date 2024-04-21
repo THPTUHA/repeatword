@@ -139,6 +139,17 @@ func (q *Queries) GetVobsRandom(ctx context.Context, arg GetVobsRandomParams) (i
 	return getvobsrandom, err
 }
 
+const getWord = `-- name: GetWord :one
+SELECT id, word FROM vobs WHERE word = ?
+`
+
+func (q *Queries) GetWord(ctx context.Context, word sql.NullString) (Vob, error) {
+	row := q.db.QueryRowContext(ctx, getWord, word)
+	var i Vob
+	err := row.Scan(&i.ID, &i.Word)
+	return i, err
+}
+
 const setWord = `-- name: SetWord :exec
 CALL SetWord(?,?)
 `
