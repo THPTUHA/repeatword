@@ -35,7 +35,7 @@ func (cc *CamCrawler) Crawl(word string) error {
 	ctx := context.Background()
 
 	w, err := queries.GetWord(ctx, sql.NullString{String: word, Valid: true})
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		log.Fatal(err)
 	}
 	if w.ID != 0 {

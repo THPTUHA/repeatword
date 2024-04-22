@@ -289,19 +289,22 @@ func (g *Game) nextQuiz(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		g.status = FINISH_STATUS
 
 		columns := []table.Column{
+			{Title: "Number", Width: 10},
 			{Title: "Word", Width: 30},
 			{Title: "Answer", Width: 10},
 		}
 
 		rows := []table.Row{}
-		for _, vob := range g.vobs {
+		for idx, vob := range g.vobs {
+			num := correctStyle.Render(fmt.Sprint(idx + 1))
 			status := correctStyle.Render(fmt.Sprint(vob.Correct))
 			wordStatus := correctStyle.Render(fmt.Sprint(vob.Word.String))
 			if !vob.Correct {
+				num = wrongStyle.Render(fmt.Sprint(idx + 1))
 				status = wrongStyle.Render(fmt.Sprint(vob.Correct))
 				wordStatus = wrongStyle.Render(fmt.Sprint(vob.Word.String))
 			}
-			rows = append(rows, table.Row{wordStatus, status})
+			rows = append(rows, table.Row{num, wordStatus, status})
 		}
 		g.result = table.New(
 			table.WithColumns(columns),
