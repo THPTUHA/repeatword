@@ -67,6 +67,7 @@ type Config struct {
 	CollectionID uint64
 	Limit        uint64
 	PlayMode     uint32
+	RecentDayNum int
 	Logger       *logrus.Entry
 	game         *Game
 }
@@ -89,6 +90,7 @@ func Init(config *Config) *Game {
 	if config.Limit == 0 {
 		config.Limit = 10
 	}
+
 	currentConfig = config
 
 	g := initialModel()
@@ -109,10 +111,10 @@ func Init(config *Config) *Game {
 			}
 		}
 	default:
-
 		result, err := queries.GetVobsRandom(ctx, db.GetVobsRandomParams{
 			Getvobsrandom:   config.CollectionID,
 			Getvobsrandom_2: config.Limit,
+			Getvobsrandom_3: config.RecentDayNum,
 		})
 		if err != nil {
 			g.logger.Fatal(err)
@@ -227,6 +229,7 @@ func (g *Game) View() string {
 		for _, v := range g.vobs {
 			if !v.Correct {
 				keys = append(keys, g.keymap.playWordWrong)
+				break
 			}
 		}
 		return fmt.Sprintf("%s\n%s", g.result.View(), g.help.ShortHelpView(keys))

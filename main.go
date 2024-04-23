@@ -15,6 +15,7 @@ func main() {
 	cid := flag.Uint64("cid", 1, "collection id")
 	limit := flag.Uint64("lm", 10, "limit question per")
 	action := flag.String("action", "", "action to perform: play or crawl")
+	recentDay := flag.Int("rd", -1, "recent day")
 	flag.Parse()
 
 	if *action == "" {
@@ -28,6 +29,7 @@ func main() {
 			CollectionID: *cid,
 			Limit:        *limit,
 			Logger:       logger.InitLogger(logrus.DebugLevel.String()),
+			RecentDayNum: *recentDay,
 		})
 		game.Play()
 	case "crawl":

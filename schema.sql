@@ -3,7 +3,8 @@ USE repeatword;
 
 CREATE TABLE IF NOT EXISTS vobs (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    word VARCHAR(255)
+    word VARCHAR(255),
+    created_at timestamp
 );
 
 

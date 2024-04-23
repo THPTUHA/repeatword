@@ -100,15 +100,20 @@ AND cw.vob_id = v.id
 AND c.id = ? ORDER BY RAND()
 `
 
-func (q *Queries) GetVobsCollection(ctx context.Context, id int32) ([]Vob, error) {
+type GetVobsCollectionRow struct {
+	ID   int32
+	Word sql.NullString
+}
+
+func (q *Queries) GetVobsCollection(ctx context.Context, id int32) ([]GetVobsCollectionRow, error) {
 	rows, err := q.db.QueryContext(ctx, getVobsCollection, id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Vob
+	var items []GetVobsCollectionRow
 	for rows.Next() {
-		var i Vob
+		var i GetVobsCollectionRow
 		if err := rows.Scan(&i.ID, &i.Word); err != nil {
 			return nil, err
 		}
@@ -124,29 +129,30 @@ func (q *Queries) GetVobsCollection(ctx context.Context, id int32) ([]Vob, error
 }
 
 const getVobsRandom = `-- name: GetVobsRandom :one
-SELECT GetVobsRandom(?, ?)
+SELECT GetVobsRandom(?, ?, ?)
 `
 
 type GetVobsRandomParams struct {
 	Getvobsrandom   interface{}
 	Getvobsrandom_2 interface{}
+	Getvobsrandom_3 interface{}
 }
 
 func (q *Queries) GetVobsRandom(ctx context.Context, arg GetVobsRandomParams) (interface{}, error) {
-	row := q.db.QueryRowContext(ctx, getVobsRandom, arg.Getvobsrandom, arg.Getvobsrandom_2)
+	row := q.db.QueryRowContext(ctx, getVobsRandom, arg.Getvobsrandom, arg.Getvobsrandom_2, arg.Getvobsrandom_3)
 	var getvobsrandom interface{}
 	err := row.Scan(&getvobsrandom)
 	return getvobsrandom, err
 }
 
 const getWord = `-- name: GetWord :one
-SELECT id, word FROM vobs WHERE word = ?
+SELECT id, word, created_at FROM vobs WHERE word = ?
 `
 
 func (q *Queries) GetWord(ctx context.Context, word sql.NullString) (Vob, error) {
 	row := q.db.QueryRowContext(ctx, getWord, word)
 	var i Vob
-	err := row.Scan(&i.ID, &i.Word)
+	err := row.Scan(&i.ID, &i.Word, &i.CreatedAt)
 	return i, err
 }
 

@@ -17,7 +17,7 @@ WHERE e.mean_id IN (sqlc.slice('mean_ids'));
 CALL SetWord(?,?);
 
 -- name: GetVobsRandom :one
-SELECT GetVobsRandom(?, ?);
+SELECT GetVobsRandom(?, ?, ?);
 
 -- name: GetWord :one
 SELECT * FROM vobs WHERE word = ?;

@@ -42,8 +42,9 @@ type Pronounce struct {
 }
 
 type Vob struct {
-	ID   int32
-	Word sql.NullString
+	ID        int32
+	Word      sql.NullString
+	CreatedAt sql.NullTime
 }
 
 type VobPart struct {

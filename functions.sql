@@ -19,9 +19,9 @@ BEGIN
     
     -- insert vob
     INSERT INTO
-        vobs(word)
+        vobs(word,created_at)
     VALUES
-        (word);
+        (word,CURRENT_TIMESTAMP);
 
     SET vob_id = LAST_INSERT_ID();
 
@@ -112,7 +112,8 @@ DELIMITER ;
 DELIMITER | 
 CREATE FUNCTION GetVobsRandom (
     collection_id_p INT,
-    lm INT
+    lm INT,
+    recent_day_num_p INT
 ) 
 RETURNS JSON
 DETERMINISTIC
@@ -127,7 +128,13 @@ BEGIN
     FROM collections c
     LEFT JOIN collection_words cw ON c.id = cw.collection_id
     JOIN (
-        SELECT id, word FROM vobs ORDER BY RAND() LIMIT lm 
+        SELECT id, word 
+        FROM vobs 
+        WHERE 
+            (recent_day_num_p != -1 AND created_at >= CONCAT(DATE_SUB(CURDATE(), INTERVAL recent_day_num_p DAY), ' 00:00:00'))
+            OR recent_day_num_p = -1
+        ORDER BY RAND() 
+        LIMIT lm
     )AS v ON v.id = cw.vob_id 
     LEFT JOIN (
         SELECT vob_id, JSON_ARRAYAGG(
