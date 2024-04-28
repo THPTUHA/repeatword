@@ -156,6 +156,16 @@ func (q *Queries) GetWord(ctx context.Context, word sql.NullString) (Vob, error)
 	return i, err
 }
 
+const getWordDict = `-- name: GetWordDict :one
+SELECT GetVobDict(?)
+`
+
+func (q *Queries) GetWordDict(ctx context.Context, getvobdict interface{}) (interface{}, error) {
+	row := q.db.QueryRowContext(ctx, getWordDict, getvobdict)
+	err := row.Scan(&getvobdict)
+	return getvobdict, err
+}
+
 const setWord = `-- name: SetWord :exec
 CALL SetWord(?,?)
 `

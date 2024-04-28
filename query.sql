@@ -21,3 +21,6 @@ SELECT GetVobsRandom(?, ?, ?);
 
 -- name: GetWord :one
 SELECT * FROM vobs WHERE word = ?;
+
+-- name: GetWordDict :one
+SELECT GetVobDict(?);

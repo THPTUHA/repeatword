@@ -180,3 +180,63 @@ BEGIN
     RETURN vobs;
 END |
 DELIMITER ;
+
+DELIMITER | 
+CREATE FUNCTION GetVobDict (
+    word VARCHAR(255)
+) 
+RETURNS JSON
+DETERMINISTIC
+BEGIN
+    DECLARE vobs JSON;
+
+    SELECT JSON_OBJECT(
+            'parts', parts,
+            'word', v.word,
+            'id', v.id
+        ) INTO vobs
+    FROM vobs v
+    LEFT JOIN (
+        SELECT vob_id, JSON_ARRAYAGG(
+            JSON_OBJECT(
+                'pronounces', pronounces,
+                'means', means,
+                'type', vob_parts.type,
+                'title', vob_parts.title
+            )
+        ) AS parts
+        FROM vob_parts
+        LEFT JOIN (
+            SELECT part_id, JSON_ARRAYAGG(
+                JSON_OBJECT(
+                    'audio_src', audio_src,
+                    'local_file', local_file,
+                    'region', region,
+                    'pro', pro
+                )
+            ) AS pronounces
+            FROM pronounces
+            GROUP BY part_id
+        ) AS audio_data ON vob_parts.id = audio_data.part_id
+        LEFT JOIN (
+            SELECT part_id, JSON_ARRAYAGG(
+                JSON_OBJECT(
+                    'meaning', meaning,
+                    'level', level,
+                    'examples', examples
+                )
+            ) AS means
+            FROM (
+                SELECT means.part_id, meaning, level, JSON_ARRAYAGG(example) AS examples
+                FROM means
+                LEFT JOIN examples ON means.id = examples.mean_id
+                GROUP BY means.part_id, meaning, level
+            ) AS mean_data
+            GROUP BY part_id
+        ) AS mean_data ON vob_parts.id = mean_data.part_id 
+        GROUP BY vob_parts.vob_id
+    ) AS part_data ON v.id = part_data.vob_id
+    WHERE v.word = word;
+    RETURN vobs;
+END |
+DELIMITER ;

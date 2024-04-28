@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"time"
 
@@ -25,12 +26,16 @@ import (
 var (
 	correctStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#008000"))
 	wrongStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+
+	highLighColor = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
+	normalColor   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
 )
 
 const (
 	START_STATUS   = 0
 	PLAYING_STATUS = 1
 	FINISH_STATUS  = 2
+	DICT_STATUS    = 3
 )
 
 const (
@@ -43,24 +48,28 @@ type Game struct {
 	vobs       []*vocab.Vocabulary
 	status     int
 	currentIdx int
+	vobDict    *vocab.Vocabulary
 
-	viewport viewport.Model
-	input    textinput.Model
-	timer    timer.Model
-	result   table.Model
-	keymap   keymap
-	help     help.Model
+	readyView  bool
+	viewport   viewport.Model
+	input      textinput.Model
+	timer      timer.Model
+	resultView table.Model
+	keymap     keymap
+	help       help.Model
 
-	stopCh chan int
-	err    error
-
-	logger *logrus.Entry
+	stopCh  chan int
+	err     error
+	queries *db.Queries
+	logger  *logrus.Entry
 }
 
 type keymap struct {
 	status        key.Binding
 	playAgain     key.Binding
 	playWordWrong key.Binding
+
+	showDict key.Binding
 }
 
 type Config struct {
@@ -100,6 +109,10 @@ func Init(config *Config) *Game {
 		g.logger.Fatal(err)
 	}
 	queries := db.New(d)
+
+	g.queries = queries
+	g.logger = config.Logger
+
 	ctx := context.Background()
 
 	vobs := make([]*vocab.Vocabulary, 0)
@@ -119,6 +132,9 @@ func Init(config *Config) *Game {
 		if err != nil {
 			g.logger.Fatal(err)
 		}
+		if result == nil {
+			g.logger.Fatal("no vobs")
+		}
 		err = json.Unmarshal(result.([]byte), &vobs)
 		if err != nil {
 			g.logger.Fatal(err)
@@ -136,19 +152,21 @@ func Init(config *Config) *Game {
 const timeInterval = 5 * time.Second
 
 func (g *Game) Init() tea.Cmd {
-	go g.playAudio()
-	return textinput.Blink
+	return nil
 }
+
+var windowSize tea.WindowSizeMsg
 
 func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		tiCmd tea.Cmd
 		vpCmd tea.Cmd
+		cmds  []tea.Cmd
 	)
 
 	g.input, tiCmd = g.input.Update(msg)
 	g.viewport, vpCmd = g.viewport.Update(msg)
-
+	// cmds = append(cmds, tiCmd, vpCmd)
 	switch msg := msg.(type) {
 	case timer.TickMsg:
 		var cmd tea.Cmd
@@ -162,6 +180,26 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		g.timer, cmd = g.timer.Update(msg)
 		return g, cmd
+	case tea.WindowSizeMsg:
+		windowSize = msg
+		if !g.readyView {
+			if g.status == DICT_STATUS {
+				g.viewport = viewport.New(msg.Width, msg.Height-50)
+				g.viewport.YPosition = 100
+				g.readyView = true
+			}
+
+			// This is only necessary for high performance rendering, which in
+			// most cases you won't need.
+			//
+			// Render the viewport one line below the header.
+			// g.viewport.YPosition = headerHeight + 1
+		} else {
+			// g.viewport.Width = msg.Width
+			g.viewport.Height = msg.Height - 10
+			g.viewport.Width = msg.Width
+			cmds = append(cmds, viewport.Sync(g.viewport))
+		}
 
 	case tea.KeyMsg:
 		switch msg.Type {
@@ -169,6 +207,7 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if g.status == START_STATUS {
 				g.status = PLAYING_STATUS
 				g.viewport.SetContent("Type a answer and press Enter to check.")
+				go g.playAudio()
 				return g, g.timer.Init()
 			} else if g.status == FINISH_STATUS {
 				currentConfig.PlayMode = PLAY_AGAIN
@@ -177,6 +216,10 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				go g.playAudio()
 				return g, g.timer.Init()
 			}
+		case tea.KeyCtrlD:
+			g.status = DICT_STATUS
+			g.input.Placeholder = "Search word..."
+			g.viewport.SetContent("")
 		case tea.KeyCtrlW:
 			if g.status == FINISH_STATUS {
 				for _, v := range g.vobs {
@@ -208,6 +251,40 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if vob.Correct {
 					return g.nextQuiz(tea.Batch(tiCmd, vpCmd))
 				}
+			} else if g.status == DICT_STATUS && g.input.Value() != "" {
+
+				result, err := g.queries.GetWordDict(context.Background(), g.input.Value())
+				if err != nil {
+					log.Fatalln(err)
+				}
+				if result == nil {
+					g.viewport.SetContent(fmt.Sprintf("not found '%s'", g.input.Value()))
+				} else {
+					var vob vocab.Vocabulary
+					err = json.Unmarshal(result.([]byte), &vob)
+					if err != nil {
+						g.logger.Fatal(err)
+					}
+					g.vobDict = &vob
+					str := vob.Word.String
+					for _, p := range vob.Parts {
+						str += "\n" + p.Title.String + "\n" + p.Type.String + "\n"
+						for _, pn := range p.Pronounces {
+							str += highLighColor.Render(pn.Region.String) + " " + normalColor.Render(pn.Pro.String) + "\t"
+						}
+						for _, g := range p.Means {
+							str += "\n----------------\n"
+							str += highLighColor.Render(g.Meaning.String) + "\n"
+							for idx, e := range g.Examples {
+								str += fmt.Sprint(idx+1) + "." + e.Example.String + "\n"
+							}
+						}
+					}
+					g.viewport.Width = windowSize.Width
+					g.viewport.Height = windowSize.Height - 10
+					g.viewport.MouseWheelEnabled = true
+					g.viewport.SetContent(str)
+				}
 
 			}
 			g.input.Reset()
@@ -218,21 +295,21 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		g.err = msg
 		return g, nil
 	}
-
-	return g, tea.Batch(tiCmd, vpCmd)
+	cmds = append(cmds, tiCmd, vpCmd)
+	return g, tea.Batch(cmds...)
 }
 
 func (g *Game) View() string {
 	if g.status == FINISH_STATUS {
 		keys := make([]key.Binding, 0)
-		keys = append(keys, g.keymap.playAgain)
+		keys = append(keys, g.keymap.playAgain, g.keymap.showDict)
 		for _, v := range g.vobs {
 			if !v.Correct {
 				keys = append(keys, g.keymap.playWordWrong)
 				break
 			}
 		}
-		return fmt.Sprintf("%s\n%s", g.result.View(), g.help.ShortHelpView(keys))
+		return fmt.Sprintf("%s\n%s", g.resultView.View(), g.help.ShortHelpView(keys))
 	}
 
 	if g.status == PLAYING_STATUS {
@@ -243,8 +320,17 @@ func (g *Game) View() string {
 			g.input.View(),
 		) + "\n\n"
 	}
+
+	if g.status == DICT_STATUS {
+		return fmt.Sprintf("%s\n%s\n%v", g.input.View(), g.viewport.View(), g.help.ShortHelpView([]key.Binding{
+			g.keymap.status,
+			g.keymap.showDict,
+		}))
+	}
+
 	return fmt.Sprintf("%s\n%v", g.viewport.View(), g.help.ShortHelpView([]key.Binding{
 		g.keymap.status,
+		g.keymap.showDict,
 	}))
 }
 
@@ -272,6 +358,10 @@ func initialModel() *Game {
 			playWordWrong: key.NewBinding(
 				key.WithKeys("ctrl+w"),
 				key.WithHelp("ctrl+w", "play again word wrong"),
+			),
+			showDict: key.NewBinding(
+				key.WithKeys("ctrl+d"),
+				key.WithHelp("ctrl+d", "show dict word"),
 			),
 		},
 		help:     help.New(),
@@ -309,7 +399,7 @@ func (g *Game) nextQuiz(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			}
 			rows = append(rows, table.Row{num, wordStatus, status})
 		}
-		g.result = table.New(
+		g.resultView = table.New(
 			table.WithColumns(columns),
 			table.WithRows(rows),
 			table.WithFocused(false),
@@ -350,7 +440,7 @@ func randomInt(n int) int {
 }
 
 func (g *Game) Play() {
-	p := tea.NewProgram(g)
+	p := tea.NewProgram(g, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	if _, err := p.Run(); err != nil {
 		g.logger.Fatal(err)
