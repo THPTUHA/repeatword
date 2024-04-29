@@ -166,6 +166,15 @@ func (q *Queries) GetWordDict(ctx context.Context, getvobdict interface{}) (inte
 	return getvobdict, err
 }
 
+const saveRecord = `-- name: SaveRecord :exec
+CALL SaveRecord(?)
+`
+
+func (q *Queries) SaveRecord(ctx context.Context, saverecord interface{}) error {
+	_, err := q.db.ExecContext(ctx, saveRecord, saverecord)
+	return err
+}
+
 const setWord = `-- name: SetWord :exec
 CALL SetWord(?,?)
 `

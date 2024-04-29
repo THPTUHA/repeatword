@@ -24,3 +24,6 @@ SELECT * FROM vobs WHERE word = ?;
 
 -- name: GetWordDict :one
 SELECT GetVobDict(?);
+
+-- name: SaveRecord :exec
+CALL SaveRecord(?);

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/THPTUHA/repeatword/audio"
@@ -44,8 +45,18 @@ const (
 	PLAY_AGAIN_WORD_WRONG
 )
 
+const (
+	VOB_NO_ANSWER = iota
+	VOB_ANSWER_CORRECT
+	VOB_ANSWER_WRONG
+)
+
 type Game struct {
-	vobs       []*vocab.Vocabulary
+	Vobs     []*vocab.Vocabulary `json:"vobs"`
+	Mode     int                 `json:"mode"`
+	BeginAt  int                 `json:"begin_at"`
+	FinishAt int                 `json:"finish_at"`
+
 	status     int
 	currentIdx int
 	vobDict    *vocab.Vocabulary
@@ -59,6 +70,7 @@ type Game struct {
 	help       help.Model
 
 	stopCh  chan int
+	lock    sync.RWMutex
 	err     error
 	queries *db.Queries
 	logger  *logrus.Entry
@@ -115,12 +127,12 @@ func Init(config *Config) *Game {
 
 	ctx := context.Background()
 
-	vobs := make([]*vocab.Vocabulary, 0)
+	Vobs := make([]*vocab.Vocabulary, 0)
 	switch config.PlayMode {
 	case PLAY_AGAIN_WORD_WRONG:
-		for _, v := range config.game.vobs {
-			if !v.Correct {
-				vobs = append(vobs, v)
+		for _, v := range config.game.Vobs {
+			if v.Status == VOB_ANSWER_WRONG || v.Status == VOB_NO_ANSWER {
+				Vobs = append(Vobs, v)
 			}
 		}
 	default:
@@ -133,19 +145,16 @@ func Init(config *Config) *Game {
 			g.logger.Fatal(err)
 		}
 		if result == nil {
-			g.logger.Fatal("no vobs")
+			g.logger.Fatal("no Vobs")
 		}
-		err = json.Unmarshal(result.([]byte), &vobs)
+		err = json.Unmarshal(result.([]byte), &Vobs)
 		if err != nil {
 			g.logger.Fatal(err)
 		}
 	}
 
-	g.vobs = vobs
+	g.Vobs = Vobs
 
-	// for _, v := range vobs {
-	// 	fmt.Println(v.String())
-	// }
 	return g
 }
 
@@ -189,11 +198,6 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				g.readyView = true
 			}
 
-			// This is only necessary for high performance rendering, which in
-			// most cases you won't need.
-			//
-			// Render the viewport one line below the header.
-			// g.viewport.YPosition = headerHeight + 1
 		} else {
 			// g.viewport.Width = msg.Width
 			g.viewport.Height = msg.Height - 10
@@ -217,13 +221,15 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return g, g.timer.Init()
 			}
 		case tea.KeyCtrlD:
-			g.status = DICT_STATUS
-			g.input.Placeholder = "Search word..."
-			g.viewport.SetContent("")
+			if g.status != PLAYING_STATUS {
+				g.status = DICT_STATUS
+				g.input.Placeholder = "Search word..."
+				g.viewport.SetContent("")
+			}
 		case tea.KeyCtrlW:
 			if g.status == FINISH_STATUS {
-				for _, v := range g.vobs {
-					if !v.Correct {
+				for _, v := range g.Vobs {
+					if v.Status == VOB_NO_ANSWER || v.Status == VOB_ANSWER_WRONG {
 						currentConfig.PlayMode = PLAY_AGAIN_WORD_WRONG
 						currentConfig.game = g
 						g = Init(currentConfig)
@@ -238,17 +244,18 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return g, tea.Quit
 		case tea.KeyEnter:
 			if g.status == PLAYING_STATUS {
-				vob := g.vobs[g.currentIdx]
+				vob := g.Vobs[g.currentIdx]
 				var checkAnswer string
 				if vob.Word.String == g.input.Value() {
-					vob.Correct = true
+					vob.Status = VOB_ANSWER_CORRECT
 					checkAnswer = correctStyle.Render(g.input.Value())
 				} else {
+					vob.Status = VOB_ANSWER_WRONG
 					checkAnswer = wrongStyle.Render(g.input.Value())
 				}
 				g.viewport.SetContent(checkAnswer)
 
-				if vob.Correct {
+				if vob.Status == VOB_ANSWER_CORRECT {
 					return g.nextQuiz(tea.Batch(tiCmd, vpCmd))
 				}
 			} else if g.status == DICT_STATUS && g.input.Value() != "" {
@@ -303,8 +310,8 @@ func (g *Game) View() string {
 	if g.status == FINISH_STATUS {
 		keys := make([]key.Binding, 0)
 		keys = append(keys, g.keymap.playAgain, g.keymap.showDict)
-		for _, v := range g.vobs {
-			if !v.Correct {
+		for _, v := range g.Vobs {
+			if v.Status == VOB_ANSWER_WRONG || v.Status == VOB_NO_ANSWER {
 				keys = append(keys, g.keymap.playWordWrong)
 				break
 			}
@@ -346,6 +353,8 @@ func initialModel() *Game {
 	vp.SetContent(`Welcome to the reapeatword!`)
 
 	return &Game{
+		BeginAt: int(time.Now().UnixMilli() / 1000),
+		lock:    sync.RWMutex{},
 		keymap: keymap{
 			status: key.NewBinding(
 				key.WithKeys("ctrl+s"),
@@ -372,14 +381,31 @@ func initialModel() *Game {
 	}
 }
 
+func (g *Game) saveRecord() error {
+	js, err := json.Marshal(g)
+	if err != nil {
+		return err
+	}
+	return g.queries.SaveRecord(context.Background(), string(js))
+}
+
 func (g *Game) nextQuiz(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	if g.timer.Running() {
 		g.timer.Stop()
 	}
 
-	if g.currentIdx >= len(g.vobs)-1 {
+	if g.currentIdx >= len(g.Vobs)-1 {
 		g.viewport.SetContent("Finish")
-		g.status = FINISH_STATUS
+
+		g.lock.Lock()
+		if g.status != FINISH_STATUS {
+			g.status = FINISH_STATUS
+			g.FinishAt = int(time.Now().UnixMilli() / 1000)
+			if err := g.saveRecord(); err != nil {
+				log.Fatalln(err)
+			}
+		}
+		g.lock.Unlock()
 
 		columns := []table.Column{
 			{Title: "Number", Width: 10},
@@ -388,15 +414,24 @@ func (g *Game) nextQuiz(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		}
 
 		rows := []table.Row{}
-		for idx, vob := range g.vobs {
-			num := correctStyle.Render(fmt.Sprint(idx + 1))
-			status := correctStyle.Render(fmt.Sprint(vob.Correct))
-			wordStatus := correctStyle.Render(fmt.Sprint(vob.Word.String))
-			if !vob.Correct {
+
+		var num, status, wordStatus string
+		for idx, vob := range g.Vobs {
+			switch vob.Status {
+			case VOB_ANSWER_WRONG:
 				num = wrongStyle.Render(fmt.Sprint(idx + 1))
-				status = wrongStyle.Render(fmt.Sprint(vob.Correct))
+				status = wrongStyle.Render("false")
 				wordStatus = wrongStyle.Render(fmt.Sprint(vob.Word.String))
+			case VOB_NO_ANSWER:
+				num = highLighColor.Render(fmt.Sprint(idx + 1))
+				status = highLighColor.Render("empty")
+				wordStatus = highLighColor.Render(fmt.Sprint(vob.Word.String))
+			case VOB_ANSWER_CORRECT:
+				num = correctStyle.Render(fmt.Sprint(idx + 1))
+				status = correctStyle.Render("true")
+				wordStatus = correctStyle.Render(fmt.Sprint(vob.Word.String))
 			}
+
 			rows = append(rows, table.Row{num, wordStatus, status})
 		}
 		g.resultView = table.New(
@@ -423,7 +458,7 @@ func (g *Game) playAudio() {
 			}
 		default:
 			if g.status == PLAYING_STATUS {
-				vob := g.vobs[g.currentIdx]
+				vob := g.Vobs[g.currentIdx]
 				idx := randomInt(len(vob.Parts[0].Pronounces) - 1)
 				audio.PlayAudio(vob.Parts[0].Pronounces[idx].LocalFile.String)
 			} else if g.status == FINISH_STATUS {

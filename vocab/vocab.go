@@ -20,8 +20,8 @@ type VobPart struct {
 }
 type Vocabulary struct {
 	db.Vob
-	Correct bool
-	Parts   []*VobPart
+	Status int `json:"status"`
+	Parts  []*VobPart
 }
 
 type PronouncesJson struct {
@@ -82,11 +82,15 @@ func (v *Vocabulary) MarshalJSON() ([]byte, error) {
 	}
 
 	data := struct {
-		Word  string         `json:"word"`
-		Parts []*VobPartJson `json:"parts"`
+		ID     int            `json:"id"`
+		Word   string         `json:"word"`
+		Status int            `json:"status"`
+		Parts  []*VobPartJson `json:"parts"`
 	}{
-		Word:  v.Word.String,
-		Parts: parts,
+		Word:   v.Word.String,
+		Parts:  parts,
+		Status: v.Status,
+		ID:     int(v.ID),
 	}
 
 	return json.Marshal(&data)
@@ -99,6 +103,8 @@ func (v *Vocabulary) UnmarshalJSON(data []byte) error {
 	}
 	v.Parts = make([]*VobPart, len(vob.Parts))
 	v.Word = sql.NullString{String: vob.Word, Valid: true}
+	v.ID = int32(vob.ID)
+
 	for i, part := range vob.Parts {
 		v.Parts[i] = &VobPart{
 			VobPart: db.VobPart{

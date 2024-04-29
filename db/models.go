@@ -25,6 +25,20 @@ type Example struct {
 	Example sql.NullString
 }
 
+type GameRecord struct {
+	ID       int32
+	Mode     sql.NullInt32
+	BeginAt  sql.NullInt32
+	FinishAt sql.NullInt32
+}
+
+type GameVobRecord struct {
+	ID           int32
+	VobID        sql.NullInt32
+	Status       sql.NullInt32
+	GameRecordID sql.NullInt32
+}
+
 type Mean struct {
 	ID      int32
 	PartID  sql.NullInt32

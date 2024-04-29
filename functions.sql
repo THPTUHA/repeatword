@@ -240,3 +240,42 @@ BEGIN
     RETURN vobs;
 END |
 DELIMITER ;
+
+
+DELIMITER | 
+CREATE PROCEDURE SaveRecord (
+    game_p JSON
+) 
+DETERMINISTIC
+BEGIN
+    DECLARE mode, begin_at, finish_at, vob_id, status, game_record_id, i INT;
+    DECLARE vobs, vob JSON;
+
+    START TRANSACTION;
+        SET mode = JSON_EXTRACT(game_p, '$.mode');
+        SET begin_at = JSON_EXTRACT(game_p, '$.begin_at');
+        SET finish_at = JSON_EXTRACT(game_p, '$.finish_at');
+        SET vobs =  JSON_EXTRACT(game_p, '$.vobs');
+
+        INSERT INTO game_records(mode, begin_at, finish_at) 
+        VALUES (mode, begin_at, finish_at);
+    
+        SET game_record_id = LAST_INSERT_ID();
+
+        SET i = 0;
+
+        WHILE i < JSON_LENGTH(vobs) DO
+            SELECT JSON_EXTRACT(vobs, CONCAT('$[', i, ']')) INTO vob;
+            
+            SET vob_id =  JSON_EXTRACT(vob, '$.id');
+            SET status =  JSON_EXTRACT(vob, '$.status');
+            
+            INSERT INTO game_vob_records(vob_id, status, game_record_id)
+            VALUES (vob_id, status, game_record_id);
+
+            SET i = i+1;
+        END WHILE;
+
+    COMMIT;
+END |
+DELIMITER ;

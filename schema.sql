@@ -55,3 +55,19 @@ CREATE TABLE IF NOT EXISTS collection_words (
     FOREIGN KEY (vob_id) REFERENCES vobs(id) ON DELETE CASCADE,
     FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS game_records (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    mode INT,
+    begin_at INT,
+    finish_at INT
+);
+
+CREATE TABLE IF NOT EXISTS game_vob_records (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    vob_id INT,
+    status INT,
+    game_record_id INT,
+    FOREIGN KEY (vob_id) REFERENCES vobs(id) ON DELETE CASCADE,
+    FOREIGN KEY (game_record_id) REFERENCES game_records(id) ON DELETE CASCADE
+);
