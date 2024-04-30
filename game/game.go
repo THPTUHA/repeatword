@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/THPTUHA/repeatword/audio"
+	"github.com/THPTUHA/repeatword/config"
 	"github.com/THPTUHA/repeatword/db"
 	"github.com/THPTUHA/repeatword/logger"
 	"github.com/THPTUHA/repeatword/vocab"
@@ -85,6 +86,8 @@ type keymap struct {
 }
 
 type Config struct {
+	Root *config.Configs
+
 	CollectionID uint64
 	Limit        uint64
 	PlayMode     uint32
@@ -460,7 +463,7 @@ func (g *Game) playAudio() {
 			if g.status == PLAYING_STATUS {
 				vob := g.Vobs[g.currentIdx]
 				idx := randomInt(len(vob.Parts[0].Pronounces) - 1)
-				audio.PlayAudio(vob.Parts[0].Pronounces[idx].LocalFile.String)
+				audio.PlayAudio(currentConfig.Root.DataDir, vob.Parts[0].Pronounces[idx].LocalFile.String)
 			} else if g.status == FINISH_STATUS {
 				return
 			}

@@ -4,14 +4,44 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"path"
+	"path/filepath"
 
+	"github.com/THPTUHA/repeatword/config"
 	"github.com/THPTUHA/repeatword/crawl"
 	"github.com/THPTUHA/repeatword/game"
 	"github.com/THPTUHA/repeatword/logger"
+	"github.com/THPTUHA/repeatword/setup"
 	"github.com/sirupsen/logrus"
 )
 
 func main() {
+	env := os.Getenv("ENV")
+	var cfg *config.Configs
+
+	if env == "dev" {
+		ex, err := os.Getwd()
+		if err != nil {
+			panic(err)
+		}
+		cfg, err = config.Set(path.Join(ex, "config.dev.yaml"))
+		if err != nil {
+			log.Fatalln(err)
+		}
+	} else {
+		ex, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+		exPath := filepath.Dir(ex)
+
+		cfg, err = config.Set(path.Join(exPath, "config.yaml"))
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+
 	cid := flag.Uint64("cid", 1, "collection id")
 	limit := flag.Uint64("lm", 10, "limit question per")
 	action := flag.String("action", "", "action to perform: play or crawl")
@@ -24,12 +54,17 @@ func main() {
 	}
 
 	switch *action {
+	case "setup":
+		if err := setup.Setup(); err != nil {
+			log.Fatalln(err)
+		}
 	case "play":
 		game := game.Init(&game.Config{
 			CollectionID: *cid,
 			Limit:        *limit,
 			Logger:       logger.InitLogger(logrus.DebugLevel.String()),
 			RecentDayNum: *recentDay,
+			Root:         cfg,
 		})
 		game.Play()
 	case "crawl":

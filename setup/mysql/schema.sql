@@ -1,14 +1,9 @@
-CREATE SCHEMA IF NOT EXISTS repeatword;
-USE repeatword;
-
 CREATE TABLE IF NOT EXISTS vobs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     word VARCHAR(255),
-    created_at timestamp
+    created_at timestamp,
+    CONSTRAINT unique_word UNIQUE (word)
 );
-
-
-ALTER TABLE vobs ADD CONSTRAINT unique_word UNIQUE (word);
 
 CREATE TABLE IF NOT EXISTS vob_parts (
     id INT AUTO_INCREMENT PRIMARY KEY,

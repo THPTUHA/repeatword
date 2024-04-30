@@ -11,6 +11,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/THPTUHA/repeatword/audio"
+	"github.com/THPTUHA/repeatword/config"
 	"github.com/THPTUHA/repeatword/db"
 	"github.com/THPTUHA/repeatword/vocab"
 )
@@ -27,6 +28,10 @@ func NewCamCrawler() *CamCrawler {
 }
 
 func (cc *CamCrawler) Crawl(word string) error {
+	cfg, err := config.Get()
+	if err != nil {
+		log.Fatal(err)
+	}
 	d, err := db.ConnectMysql()
 	if err != nil {
 		log.Fatal(err)
@@ -59,12 +64,14 @@ func (cc *CamCrawler) Crawl(word string) error {
 
 		part.Type.String = s.Find(".pos").Nodes[0].FirstChild.Data
 
-		s.Find(".dpron-i").Each(func(i int, s *goquery.Selection) {
-			var pros db.Pronounce
-			pros.Region.String = s.Find(".region").Text()
-			pros.AudioSrc.String, _ = s.Find("source").First().Attr("src")
-			pros.Pro.String = s.Find(".pron").Text()
-			part.Pronounces = append(part.Pronounces, &pros)
+		s.Find(".pos-header").Each(func(i int, s *goquery.Selection) {
+			s.Find(".dpron-i").Each(func(i int, s *goquery.Selection) {
+				var pros db.Pronounce
+				pros.Region.String = s.Find(".region").Text()
+				pros.AudioSrc.String, _ = s.Find("source").First().Attr("src")
+				pros.Pro.String = s.Find(".pron").Text()
+				part.Pronounces = append(part.Pronounces, &pros)
+			})
 		})
 
 		// illus part
@@ -97,7 +104,7 @@ func (cc *CamCrawler) Crawl(word string) error {
 
 			err = audio.Download(
 				fmt.Sprintf("%s%s", cc.AudioBaseUrl, pros.AudioSrc.String),
-				path.Join(pwd, "data", pros.LocalFile.String),
+				path.Join(pwd, cfg.DataDir, pros.LocalFile.String),
 			)
 			if err != nil {
 				panic(err)

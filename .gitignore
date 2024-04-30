@@ -1,3 +1,7 @@
 data
 script.sql
 demo
+config.yaml
+bin
+config.dev.yaml
+data_dev

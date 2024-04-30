@@ -1,8 +1,5 @@
-USE repeatword;
-
-DELIMITER | 
-
-CREATE PROCEDURE SetWord (
+-- Function
+CREATE PROCEDURE  SetWord (
     IN collection_id_p INT,
     IN vob_p JSON
 ) 
@@ -105,12 +102,10 @@ BEGIN
     END WHILE;
 
     COMMIT;
-END |
+END;
 
-DELIMITER ;
-
-DELIMITER | 
-CREATE FUNCTION GetVobsRandom (
+-- Function
+CREATE FUNCTION  GetVobsRandom (
     collection_id_p INT,
     lm INT,
     recent_day_num_p INT
@@ -178,11 +173,10 @@ BEGIN
     ) AS part_data ON v.id = part_data.vob_id 
     GROUP BY c.id;
     RETURN vobs;
-END |
-DELIMITER ;
+END;
 
-DELIMITER | 
-CREATE FUNCTION GetVobDict (
+-- Function
+CREATE FUNCTION  GetVobDict (
     word VARCHAR(255)
 ) 
 RETURNS JSON
@@ -238,12 +232,10 @@ BEGIN
     ) AS part_data ON v.id = part_data.vob_id
     WHERE v.word = word;
     RETURN vobs;
-END |
-DELIMITER ;
+END;
 
-
-DELIMITER | 
-CREATE PROCEDURE SaveRecord (
+-- Function
+CREATE PROCEDURE  SaveRecord (
     game_p JSON
 ) 
 DETERMINISTIC
@@ -275,7 +267,5 @@ BEGIN
 
             SET i = i+1;
         END WHILE;
-
     COMMIT;
-END |
-DELIMITER ;
+END;

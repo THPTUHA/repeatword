@@ -58,13 +58,8 @@ func Download(url, destination string) error {
 
 var context *oto.Context
 
-func PlayAudio(filename string) {
-	dir, err := os.Getwd()
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	file, err := os.Open(path.Join(dir, fmt.Sprintf("data/%s", filename)))
+func PlayAudio(dataDir, filename string) {
+	file, err := os.Open(path.Join(dataDir, filename))
 	if err != nil {
 		log.Fatal(err)
 	}
