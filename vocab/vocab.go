@@ -84,15 +84,17 @@ func (v *Vocabulary) MarshalJSON() ([]byte, error) {
 	}
 
 	data := struct {
-		ID     int            `json:"id"`
-		Word   string         `json:"word"`
-		Status int            `json:"status"`
-		Parts  []*VobPartJson `json:"parts"`
+		ID        int            `json:"id"`
+		Word      string         `json:"word"`
+		Status    int            `json:"status"`
+		AnswerNum int            `json:"answer_num"`
+		Parts     []*VobPartJson `json:"parts"`
 	}{
-		Word:   v.Word.String,
-		Parts:  parts,
-		Status: v.Status,
-		ID:     int(v.ID),
+		Word:      v.Word.String,
+		Parts:     parts,
+		Status:    v.Status,
+		AnswerNum: v.AnswerNum,
+		ID:        int(v.ID),
 	}
 
 	return json.Marshal(&data)

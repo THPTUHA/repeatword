@@ -37,6 +37,7 @@ type GameVobRecord struct {
 	VobID        sql.NullInt32
 	Status       sql.NullInt32
 	GameRecordID sql.NullInt32
+	AnswerNum    sql.NullInt32
 }
 
 type Mean struct {

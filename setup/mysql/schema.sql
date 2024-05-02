@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS game_vob_records (
     vob_id INT,
     status INT,
     game_record_id INT,
+    answer_num INT,
     FOREIGN KEY (vob_id) REFERENCES vobs(id) ON DELETE CASCADE,
     FOREIGN KEY (game_record_id) REFERENCES game_records(id) ON DELETE CASCADE
 );

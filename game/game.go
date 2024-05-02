@@ -512,7 +512,16 @@ func (g *Game) nextQuiz(cmd tea.Cmd, timeout bool) (tea.Model, tea.Cmd) {
 			}
 		}
 		if !conti {
-			g.status = FINISH_STATUS
+			g.lock.Lock()
+			if g.status != FINISH_STATUS {
+				g.status = FINISH_STATUS
+				g.FinishAt = int(time.Now().UnixMilli() / 1000)
+				if err := g.saveRecord(); err != nil {
+					log.Fatalln(err)
+				}
+			}
+			g.lock.Unlock()
+
 			columns := []table.Column{
 				{Title: "Number", Width: 10},
 				{Title: "Word", Width: 30},
