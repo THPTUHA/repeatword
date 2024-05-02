@@ -20,8 +20,10 @@ type VobPart struct {
 }
 type Vocabulary struct {
 	db.Vob
-	Status int `json:"status"`
-	Parts  []*VobPart
+	Status    int `json:"status"`
+	Parts     []*VobPart
+	AnswerNum int
+	Remand    int
 }
 
 type PronouncesJson struct {

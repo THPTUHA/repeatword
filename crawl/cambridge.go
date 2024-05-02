@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"path"
 
 	"github.com/PuerkitoBio/goquery"
@@ -65,13 +64,16 @@ func (cc *CamCrawler) Crawl(word string) error {
 		part.Type.String = s.Find(".pos").Nodes[0].FirstChild.Data
 
 		s.Find(".pos-header").Each(func(i int, s *goquery.Selection) {
-			s.Find(".dpron-i").Each(func(i int, s *goquery.Selection) {
-				var pros db.Pronounce
-				pros.Region.String = s.Find(".region").Text()
-				pros.AudioSrc.String, _ = s.Find("source").First().Attr("src")
-				pros.Pro.String = s.Find(".pron").Text()
-				part.Pronounces = append(part.Pronounces, &pros)
-			})
+			title := s.Find(".di-title")
+			if len(title.Nodes) != 0 {
+				s.Find(".dpron-i").Each(func(i int, s *goquery.Selection) {
+					var pros db.Pronounce
+					pros.Region.String = s.Find(".region").Text()
+					pros.AudioSrc.String, _ = s.Find("source").First().Attr("src")
+					pros.Pro.String = s.Find(".pron").Text()
+					part.Pronounces = append(part.Pronounces, &pros)
+				})
+			}
 		})
 
 		// illus part
@@ -90,11 +92,6 @@ func (cc *CamCrawler) Crawl(word string) error {
 		vb.Parts = append(vb.Parts, &part)
 	})
 
-	pwd, err := os.Getwd()
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	if len(vb.Parts) == 0 {
 		log.Fatalf(fmt.Sprintf("Not found word %s", word))
 	}
@@ -104,7 +101,7 @@ func (cc *CamCrawler) Crawl(word string) error {
 
 			err = audio.Download(
 				fmt.Sprintf("%s%s", cc.AudioBaseUrl, pros.AudioSrc.String),
-				path.Join(pwd, cfg.DataDir, pros.LocalFile.String),
+				path.Join(cfg.DataDir, pros.LocalFile.String),
 			)
 			if err != nil {
 				panic(err)

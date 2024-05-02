@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"sync"
 	"time"
 
@@ -34,10 +35,11 @@ var (
 )
 
 const (
-	START_STATUS   = 0
-	PLAYING_STATUS = 1
-	FINISH_STATUS  = 2
-	DICT_STATUS    = 3
+	START_STATUS       = 0
+	PLAYING_STATUS     = 1
+	FINISH_STATUS      = 2
+	DICT_STATUS        = 3
+	VIEW_ANSWER_STATUS = 4
 )
 
 const (
@@ -52,9 +54,14 @@ const (
 	VOB_ANSWER_WRONG
 )
 
+const (
+	NORMAL_MODE = iota
+	INFINITY_MODE
+)
+
 type Game struct {
 	Vobs     []*vocab.Vocabulary `json:"vobs"`
-	Mode     int                 `json:"mode"`
+	Mode     uint                `json:"mode"`
 	BeginAt  int                 `json:"begin_at"`
 	FinishAt int                 `json:"finish_at"`
 
@@ -69,6 +76,8 @@ type Game struct {
 	resultView table.Model
 	keymap     keymap
 	help       help.Model
+
+	debug *os.File
 
 	stopCh  chan int
 	lock    sync.RWMutex
@@ -90,13 +99,21 @@ type Config struct {
 
 	CollectionID uint64
 	Limit        uint64
-	PlayMode     uint32
+	PlayMode     uint
+	Mode         uint
+
 	RecentDayNum int
 	Logger       *logrus.Entry
 	game         *Game
 }
 
 var currentConfig *Config = nil
+
+func (g *Game) Debug(str string) {
+	if g.debug != nil {
+		g.debug.Write([]byte(str))
+	}
+}
 
 func Init(config *Config) *Game {
 	if config == nil {
@@ -127,6 +144,14 @@ func Init(config *Config) *Game {
 
 	g.queries = queries
 	g.logger = config.Logger
+	g.Mode = config.Mode
+
+	// file, err := os.Create("debug.txt")
+	// g.debug = file
+
+	if err != nil {
+		g.logger.Fatal(err)
+	}
 
 	ctx := context.Background()
 
@@ -162,6 +187,8 @@ func Init(config *Config) *Game {
 }
 
 const timeInterval = 5 * time.Second
+const timeDelayViewAnswer = 1 * time.Second
+const answerPlentyExtra = 3
 
 func (g *Game) Init() tea.Cmd {
 	return nil
@@ -184,7 +211,8 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		g.timer, cmd = g.timer.Update(msg)
 		if g.timer.Timedout() {
-			return g.nextQuiz(cmd)
+			g.Debug(g.Vobs[g.currentIdx].Word.String + "timeout\n")
+			return g.nextQuiz(cmd, true)
 		}
 		return g, cmd
 
@@ -259,7 +287,10 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				g.viewport.SetContent(checkAnswer)
 
 				if vob.Status == VOB_ANSWER_CORRECT {
-					return g.nextQuiz(tea.Batch(tiCmd, vpCmd))
+					vob.AnswerNum++
+					vob.Remand--
+					g.Debug(g.Vobs[g.currentIdx].Word.String + "next quiz\n")
+					return g.nextQuiz(tea.Batch(tiCmd, vpCmd), false)
 				}
 			} else if g.status == DICT_STATUS && g.input.Value() != "" {
 
@@ -310,6 +341,15 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (g *Game) View() string {
+	if g.status == VIEW_ANSWER_STATUS {
+		g.viewport.SetContent(highLighColor.Render(g.Vobs[g.currentIdx].Word.String))
+		return fmt.Sprintf(
+			"%s\n\n%s\n",
+			g.timer.View(),
+			g.viewport.View(),
+		) + "\n\n"
+	}
+
 	if g.status == FINISH_STATUS {
 		keys := make([]key.Binding, 0)
 		keys = append(keys, g.keymap.playAgain, g.keymap.showDict)
@@ -392,14 +432,12 @@ func (g *Game) saveRecord() error {
 	return g.queries.SaveRecord(context.Background(), string(js))
 }
 
-func (g *Game) nextQuiz(cmd tea.Cmd) (tea.Model, tea.Cmd) {
+func (g *Game) nextQuiz(cmd tea.Cmd, timeout bool) (tea.Model, tea.Cmd) {
 	if g.timer.Running() {
 		g.timer.Stop()
 	}
 
-	if g.currentIdx >= len(g.Vobs)-1 {
-		g.viewport.SetContent("Finish")
-
+	if g.currentIdx >= len(g.Vobs)-1 && g.Mode == NORMAL_MODE {
 		g.lock.Lock()
 		if g.status != FINISH_STATUS {
 			g.status = FINISH_STATUS
@@ -445,9 +483,79 @@ func (g *Game) nextQuiz(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		return g, cmd
 	}
 
+	if timeout && g.Mode == INFINITY_MODE {
+		if g.status == PLAYING_STATUS {
+			v := g.Vobs[g.currentIdx]
+			if v.Status == VOB_ANSWER_WRONG || v.Status == VOB_NO_ANSWER {
+				v.Status = VOB_NO_ANSWER
+				v.Remand += answerPlentyExtra
+			}
+			g.Debug(g.Vobs[g.currentIdx].Word.String + " show_answer\n")
+			g.status = VIEW_ANSWER_STATUS
+			g.timer = timer.NewWithInterval(timeDelayViewAnswer, time.Millisecond)
+			return g, g.timer.Init()
+		}
+	}
+
+	if g.Mode == INFINITY_MODE {
+		conti := false
+		for _, v := range g.Vobs {
+			g.Debug(fmt.Sprintf("%s %d\n", v.Word.String, v.Remand))
+		}
+		for i := 1; i <= len(g.Vobs); i++ {
+			idx := (g.currentIdx + i) % len(g.Vobs)
+			v := g.Vobs[idx]
+			if v.Remand >= 0 {
+				g.currentIdx = idx
+				conti = true
+				break
+			}
+		}
+		if !conti {
+			g.status = FINISH_STATUS
+			columns := []table.Column{
+				{Title: "Number", Width: 10},
+				{Title: "Word", Width: 30},
+				{Title: "AnswerNumber", Width: 10},
+			}
+
+			rows := []table.Row{}
+
+			var num, status, wordStatus string
+			for idx, vob := range g.Vobs {
+				switch vob.Status {
+				case VOB_ANSWER_WRONG:
+					num = wrongStyle.Render(fmt.Sprint(idx + 1))
+					status = wrongStyle.Render(fmt.Sprint(vob.AnswerNum))
+					wordStatus = wrongStyle.Render(fmt.Sprint(vob.Word.String))
+				case VOB_NO_ANSWER:
+					num = highLighColor.Render(fmt.Sprint(idx + 1))
+					status = highLighColor.Render(fmt.Sprint(vob.AnswerNum))
+					wordStatus = highLighColor.Render(fmt.Sprint(vob.Word.String))
+				case VOB_ANSWER_CORRECT:
+					num = correctStyle.Render(fmt.Sprint(idx + 1))
+					status = correctStyle.Render(fmt.Sprint(vob.AnswerNum))
+					wordStatus = correctStyle.Render(fmt.Sprint(vob.Word.String))
+				}
+
+				rows = append(rows, table.Row{num, wordStatus, status})
+			}
+
+			g.resultView = table.New(
+				table.WithColumns(columns),
+				table.WithRows(rows),
+				table.WithFocused(false),
+				table.WithHeight(len(rows)+1))
+
+			return g, cmd
+		}
+	} else {
+		g.currentIdx++
+	}
+
+	g.status = PLAYING_STATUS
 	g.timer = timer.NewWithInterval(timeInterval, time.Millisecond)
-	g.currentIdx++
-	g.viewport.SetContent("Type a answer and press Enter to check.")
+	g.viewport.SetContent(fmt.Sprintf("Type a answer and press Enter to check. remand %d", g.Vobs[g.currentIdx].Remand))
 	g.input.SetValue("")
 	return g, g.timer.Init()
 }

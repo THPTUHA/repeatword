@@ -22,5 +22,4 @@ uf: clean functions
 
 release:
 	go install -v -ldflags='-s -w'
-	mkdir -p $(repeatDir)data
 	
