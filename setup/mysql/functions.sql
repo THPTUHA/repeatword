@@ -240,7 +240,7 @@ CREATE PROCEDURE  SaveRecord (
 ) 
 DETERMINISTIC
 BEGIN
-    DECLARE mode, begin_at, finish_at, vob_id, status, game_record_id, i,answer_num INT;
+    DECLARE mode, begin_at, finish_at, vob_id, status, game_record_id, i,answer_num,game_type INT;
     DECLARE vobs, vob JSON;
 
     START TRANSACTION;
@@ -248,9 +248,10 @@ BEGIN
         SET begin_at = JSON_EXTRACT(game_p, '$.begin_at');
         SET finish_at = JSON_EXTRACT(game_p, '$.finish_at');
         SET vobs =  JSON_EXTRACT(game_p, '$.vobs');
+        SET game_type =  JSON_EXTRACT(game_p, '$.game_type');
 
-        INSERT INTO game_records(mode, begin_at, finish_at) 
-        VALUES (mode, begin_at, finish_at);
+        INSERT INTO game_records(mode, begin_at, finish_at,game_type) 
+        VALUES (mode, begin_at, finish_at,game_type);
     
         SET game_record_id = LAST_INSERT_ID();
 

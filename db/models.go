@@ -30,6 +30,7 @@ type GameRecord struct {
 	Mode     sql.NullInt32
 	BeginAt  sql.NullInt32
 	FinishAt sql.NullInt32
+	GameType sql.NullInt32
 }
 
 type GameVobRecord struct {

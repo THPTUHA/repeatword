@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS game_records (
     id INT AUTO_INCREMENT PRIMARY KEY,
     mode INT,
     begin_at INT,
-    finish_at INT
+    finish_at INT,
+    game_type INT
 );
 
 CREATE TABLE IF NOT EXISTS game_vob_records (

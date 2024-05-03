@@ -47,6 +47,7 @@ func main() {
 	mode := flag.Uint("mode", 0, "Mode game")
 	action := flag.String("action", "", "action to perform: play or crawl")
 	recentDay := flag.Int("rd", -1, "recent day")
+	gameType := flag.Int("type", 0, "game type")
 	flag.Parse()
 
 	if *action == "" {
@@ -67,6 +68,7 @@ func main() {
 			RecentDayNum: *recentDay,
 			Root:         cfg,
 			Mode:         *mode,
+			Type:         *gameType,
 		})
 		game.Play()
 	case "crawl":

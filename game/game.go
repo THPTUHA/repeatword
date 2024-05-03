@@ -55,6 +55,11 @@ const (
 )
 
 const (
+	AUDIO_GAME = iota
+	MEANING_GAME
+)
+
+const (
 	NORMAL_MODE = iota
 	INFINITY_MODE
 )
@@ -64,6 +69,7 @@ type Game struct {
 	Mode     uint                `json:"mode"`
 	BeginAt  int                 `json:"begin_at"`
 	FinishAt int                 `json:"finish_at"`
+	Type     int                 `json:"game_type"`
 
 	status     int
 	currentIdx int
@@ -101,6 +107,7 @@ type Config struct {
 	Limit        uint64
 	PlayMode     uint
 	Mode         uint
+	Type         int
 
 	RecentDayNum int
 	Logger       *logrus.Entry
@@ -145,6 +152,7 @@ func Init(config *Config) *Game {
 	g.queries = queries
 	g.logger = config.Logger
 	g.Mode = config.Mode
+	g.Type = config.Type
 
 	// file, err := os.Create("debug.txt")
 	// g.debug = file
@@ -156,6 +164,7 @@ func Init(config *Config) *Game {
 	ctx := context.Background()
 
 	Vobs := make([]*vocab.Vocabulary, 0)
+
 	switch config.PlayMode {
 	case PLAY_AGAIN_WORD_WRONG:
 		for _, v := range config.game.Vobs {
@@ -183,11 +192,17 @@ func Init(config *Config) *Game {
 
 	g.Vobs = Vobs
 
+	if g.Type == MEANING_GAME {
+		g.viewport.SetContent(g.randomMean())
+		g.timer = timer.NewWithInterval(meaningInterval, time.Millisecond)
+	}
+
 	return g
 }
 
 const timeInterval = 5 * time.Second
 const timeDelayViewAnswer = 1 * time.Second
+const meaningInterval = 10 * time.Second
 const answerPlentyExtra = 3
 
 func (g *Game) Init() tea.Cmd {
@@ -241,14 +256,22 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlS:
 			if g.status == START_STATUS {
 				g.status = PLAYING_STATUS
-				g.viewport.SetContent("Type a answer and press Enter to check.")
-				go g.playAudio()
+				if g.Type == MEANING_GAME {
+					g.viewport.SetContent(g.randomMean())
+				} else {
+					g.viewport.SetContent("Type a answer and press Enter to check.")
+				}
+				if g.Type == AUDIO_GAME {
+					go g.playAudio()
+				}
 				return g, g.timer.Init()
 			} else if g.status == FINISH_STATUS {
 				currentConfig.PlayMode = PLAY_AGAIN
 				g = Init(currentConfig)
 				g.status = PLAYING_STATUS
-				go g.playAudio()
+				if g.Type == AUDIO_GAME {
+					go g.playAudio()
+				}
 				return g, g.timer.Init()
 			}
 		case tea.KeyCtrlD:
@@ -265,7 +288,9 @@ func (g *Game) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						currentConfig.game = g
 						g = Init(currentConfig)
 						g.status = PLAYING_STATUS
-						go g.playAudio()
+						if g.Type == AUDIO_GAME {
+							go g.playAudio()
+						}
 						return g, g.timer.Init()
 					}
 				}
@@ -563,10 +588,28 @@ func (g *Game) nextQuiz(cmd tea.Cmd, timeout bool) (tea.Model, tea.Cmd) {
 	}
 
 	g.status = PLAYING_STATUS
-	g.timer = timer.NewWithInterval(timeInterval, time.Millisecond)
-	g.viewport.SetContent(fmt.Sprintf("Type a answer and press Enter to check. remand %d", g.Vobs[g.currentIdx].Remand))
+
+	if g.Type == MEANING_GAME {
+		g.viewport.SetContent(g.randomMean())
+		g.timer = timer.NewWithInterval(meaningInterval, time.Millisecond)
+	} else {
+		g.timer = timer.NewWithInterval(timeInterval, time.Millisecond)
+		g.viewport.SetContent(fmt.Sprintf("Type a answer and press Enter to check. remand %d", g.Vobs[g.currentIdx].Remand))
+	}
+
 	g.input.SetValue("")
 	return g, g.timer.Init()
+}
+
+func (g *Game) randomMean() string {
+	v := g.Vobs[g.currentIdx]
+	means := make([]string, 0)
+	for _, p := range v.Parts {
+		for _, m := range p.Means {
+			means = append(means, m.Meaning.String)
+		}
+	}
+	return means[randomInt(len(means)-1)]
 }
 
 func (g *Game) playAudio() {
